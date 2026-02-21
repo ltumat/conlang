@@ -21,3 +21,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    - family: NotoSerif
+      fonts:
+        - asset: fonts/NotoSerif-Regular.ttf
+        - asset: fonts/NotoSerif-Bold.ttf
+          weight: 700

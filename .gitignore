@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -230,3 +230,5 @@ frontend/android/app/release/
 frontend/ios/Pods/
 frontend/ios/.symlinks/
 frontend/ios/Flutter/ephemeral/
+
+frontend/fonts/
