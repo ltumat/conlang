@@ -24,4 +24,16 @@ class ApiService {
       throw Exception('Failed to load languages');
     }
   }
+
+  Future<List<Map<String, dynamic>>> fetchWords(String language) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/words/?language=$language'),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['words']);
+    } else {
+      throw Exception('Failed to load words');
+    }
+  }
 }

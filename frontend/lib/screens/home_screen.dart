@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:conlang/services/api_service.dart';
+import 'package:conlang/screens/language_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -47,7 +48,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
-                  // TODO: navigate to language detail
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => LanguageScreen(
+                        language: lang['name'],
+                      ),
+                    ),
+                  );
                 },
               );
             },

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import languages
+from app.routers import languages, words
 
 app = FastAPI(
     title="Conlang API",
@@ -20,3 +20,4 @@ async def health_check():
     return {"status": "ok"}
 
 app.include_router(languages.router)
+app.include_router(words.router)
