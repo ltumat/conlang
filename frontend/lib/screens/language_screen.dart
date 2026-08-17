@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:conlang/screens/words_screen.dart';
+import 'package:conlang/screens/wlist_screen.dart';
 
 class LanguageScreen extends StatelessWidget {
   final String language;

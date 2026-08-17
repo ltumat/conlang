@@ -31,7 +31,9 @@ class ApiService {
     );
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      return List<Map<String, dynamic>>.from(data['words']);
+      return (data['words'] as List<dynamic>)
+          .map((word) => Map<String, dynamic>.from(word as Map))
+          .toList();
     } else {
       throw Exception('Failed to load words');
     }
