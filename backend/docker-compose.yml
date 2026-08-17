@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: conlang-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: conlang
+      POSTGRES_USER: conlang
+      POSTGRES_PASSWORD: conlang
+    ports:
+      - "5432:5432"
+    volumes:
+      - conlang-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conlang -d conlang"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: conlang-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://conlang:conlang@postgres:5432/conlang
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  conlang-postgres-data:
