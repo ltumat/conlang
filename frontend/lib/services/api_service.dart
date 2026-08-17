@@ -2,9 +2,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Use localhost for iOS simulator
-  // Use 10.0.2.2 for Android emulator
-  static const String baseUrl = 'http://localhost:8000';
+  // Override for a deployed API with:
+  // flutter run --dart-define=API_BASE_URL=https://your-api.example.com
+  // Use localhost for the iOS simulator and 10.0.2.2 for Android emulators.
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8000',
+  );
 
   Future<Map<String, dynamic>> healthCheck() async {
     final response = await http.get(Uri.parse('$baseUrl/health'));
