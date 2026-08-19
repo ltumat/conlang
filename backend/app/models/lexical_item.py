@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -19,4 +19,7 @@ class LexicalItem(Base):
         "Sentence",
         secondary=sentence_lexical_items,
         back_populates="lexical_items",
+    )
+    embeddings = relationship(
+        "WordEmbedding", back_populates="lexical_item", cascade="all, delete-orphan"
     )

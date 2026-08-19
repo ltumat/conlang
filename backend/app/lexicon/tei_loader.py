@@ -1,11 +1,3 @@
-"""Load a TEI dictionary without losing entry or sense information.
-
-The returned objects contain plain Python values and are therefore suitable for
-serialising as JSON, inserting into Postgres, or turning into embedding
-records.  TEI namespaces are handled explicitly because the source uses the
-TEI default namespace.
-"""
-
 from __future__ import annotations
 
 import argparse
