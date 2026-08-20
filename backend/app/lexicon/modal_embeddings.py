@@ -7,6 +7,7 @@ from typing import Any
 import modal
 
 from app.lexicon.embedding_config import (
+    EMBEDDING_DIMENSIONS,
     MANIFEST_FILE,
     METADATA_FILE,
     SENSES_FILE,
@@ -20,7 +21,7 @@ from app.lexicon.tei_loader import load_tei_entries
 
 CONFIG = load_config()
 MODELS = {
-    CONFIG.model: {"dimensions": CONFIG.dimensions, "e5_prefix": False}
+    CONFIG.model: {"dimensions": EMBEDDING_DIMENSIONS, "e5_prefix": False}
 }
 
 image = (
@@ -29,7 +30,7 @@ image = (
     .env(
         {
             "EMBEDDING_MODEL": CONFIG.model,
-            "EMBEDDING_DIMENSIONS": str(CONFIG.dimensions),
+            "EMBEDDING_DIMENSIONS": str(EMBEDDING_DIMENSIONS),
             "MODAL_HF_SECRET_NAME": CONFIG.secret_name,
             "MODAL_VOLUME_NAME": CONFIG.volume_name,
             "FRENCH_TEI_FILE": CONFIG.tei_file,
@@ -114,10 +115,10 @@ def embed_all(
 
     model = SentenceTransformer(CONFIG.model)
     dimensions = model.get_embedding_dimension()
-    if dimensions != CONFIG.dimensions:
+    if dimensions != EMBEDDING_DIMENSIONS:
         raise ValueError(
             f"{CONFIG.model} returned {dimensions} dimensions; "
-            f"expected {CONFIG.dimensions}"
+            f"expected {EMBEDDING_DIMENSIONS}"
         )
 
     def encode(texts: list[str]) -> Any:
@@ -146,7 +147,7 @@ def embed_all(
 
     manifest = {
         "model": CONFIG.model,
-        "dimensions": CONFIG.dimensions,
+        "dimensions": EMBEDDING_DIMENSIONS,
         "files": {
             "metadata": METADATA_FILE,
             "manifest": MANIFEST_FILE,
