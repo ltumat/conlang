@@ -1,4 +1,4 @@
-from sqlalchemy import Table, Column, Integer, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from app.database import Base
 
@@ -13,6 +13,8 @@ sentence_lexical_items = Table(
     "sentence_lexical_items",
     Base.metadata,
     Column("sentence_id", Integer, ForeignKey("sentences.id"), primary_key=True),
-    Column("lexical_item_id", Integer, ForeignKey("lexical_items.id"), primary_key=True),
+    Column(
+        "lexical_item_id", Integer, ForeignKey("lexical_items.id"), primary_key=True
+    ),
     Column("position", Integer),
 )
