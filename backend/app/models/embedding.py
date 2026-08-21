@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -14,6 +14,34 @@ class Embedding(Base):
         CheckConstraint(
             "content_type IN ('word', 'sense', 'sentence', 'sentence_pair')",
             name="ck_embedding_content_type",
+        ),
+        Index(
+            "ix_embeddings_model_content_item",
+            "model_name",
+            "content_type",
+            "lexical_item_id",
+            postgresql_where="lexical_item_id IS NOT NULL",
+        ),
+        Index(
+            "ix_embeddings_model_content_sense",
+            "model_name",
+            "content_type",
+            "sense_id",
+            postgresql_where="sense_id IS NOT NULL",
+        ),
+        Index(
+            "ix_embeddings_model_content_sentence",
+            "model_name",
+            "content_type",
+            "sentence_id",
+            postgresql_where="sentence_id IS NOT NULL",
+        ),
+        Index(
+            "ix_embeddings_model_content_translation",
+            "model_name",
+            "content_type",
+            "sentence_translation_id",
+            postgresql_where="sentence_translation_id IS NOT NULL",
         ),
     )
 

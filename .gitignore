@@ -177,7 +177,7 @@ language_data/
 notebooks/
 
 # Generated embedding exports used by notebooks.
-backend/data/french_embeddings/
+backend/data/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

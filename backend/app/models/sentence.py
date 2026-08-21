@@ -9,7 +9,7 @@ class Sentence(Base):
     __table_args__ = (UniqueConstraint("language_id", "text"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    text: Mapped[str] = mapped_column(String, nullable=False)
+    text: Mapped[str] = mapped_column(String, nullable=False, index=True)
     source_sentence_id: Mapped[str | None] = mapped_column(String)
     language_id: Mapped[int] = mapped_column(
         ForeignKey("languages.id"), nullable=False
