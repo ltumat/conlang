@@ -1,5 +1,5 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -8,21 +8,20 @@ class LexicalItem(Base):
     __tablename__ = "lexical_items"
     __table_args__ = (
         UniqueConstraint(
-            "language_id",
-            "word",
-            "part_of_speech_code",
-            "gender",
+            "language_id", "word", "part_of_speech_code", "gender"
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    word = Column(String, nullable=False)
-    pronunciation = Column(String)
-    part_of_speech_code = Column(String(10))
-    part_of_speech = Column(String)
-    gender = Column(String(10))
-    source_entry_id = Column(Integer)
-    language_id = Column(Integer, ForeignKey("languages.id"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    word: Mapped[str] = mapped_column(String, nullable=False)
+    pronunciation: Mapped[str | None] = mapped_column(String)
+    part_of_speech_code: Mapped[str | None] = mapped_column(String(10))
+    part_of_speech: Mapped[str | None] = mapped_column(String)
+    gender: Mapped[str | None] = mapped_column(String(10))
+    source_entry_id: Mapped[int | None] = mapped_column(Integer)
+    language_id: Mapped[int] = mapped_column(
+        ForeignKey("languages.id"), nullable=False
+    )
 
     language = relationship("Language", back_populates="lexical_items")
     senses = relationship(
