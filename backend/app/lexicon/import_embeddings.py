@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -29,6 +29,8 @@ from app.models import (
     SentenceTranslation,
 )
 
+BATCH_SIZE = 5000
+
 
 def load_json(path: str | Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -39,50 +41,6 @@ def get_vector_rows(path: str | Path) -> np.ndarray:
     if vectors.ndim != 2:
         raise ValueError(f"Expected a 2D array in {path}, got shape {vectors.shape}")
     return vectors
-
-
-def find_embedding(
-    session: Session,
-    model_name: str,
-    content_type: str,
-    target_field: str,
-    target_id: int,
-) -> Embedding | None:
-    target_column = getattr(Embedding, target_field)
-    return session.scalar(
-        select(Embedding).where(
-            Embedding.model_name == model_name,
-            Embedding.content_type == content_type,
-            target_column == target_id,
-        )
-    )
-
-
-def save_embedding(
-    session: Session,
-    model_name: str,
-    dimensions: int,
-    content_type: str,
-    target_field: str,
-    target_id: int,
-    vector: np.ndarray,
-) -> None:
-    values = vector.astype(float).tolist()
-    embedding = find_embedding(
-        session, model_name, content_type, target_field, target_id
-    )
-    if embedding is None:
-        embedding = Embedding(
-            model_name=model_name,
-            content_type=content_type,
-            dimensions=dimensions,
-            embedding=values,
-        )
-        setattr(embedding, target_field, target_id)
-        session.add(embedding)
-    else:
-        embedding.dimensions = dimensions
-        embedding.embedding = values
 
 
 def import_embeddings(
@@ -96,6 +54,8 @@ def import_embeddings(
 ) -> dict[str, int]:
     model_name = manifest["model"]
     dimensions = int(manifest["dimensions"])
+
+    # Validate shapes
     expected = {
         "words": (words, metadata["word_records"]),
         "senses": (senses, metadata["sense_records"]),
@@ -113,93 +73,121 @@ def import_embeddings(
                 f"manifest expects {dimensions}"
             )
 
-    counts = {"word": 0, "sense": 0, "sentence": 0, "sentence_pair": 0}
-    word_items: dict[int, LexicalItem] = {}
-    for record in metadata["word_records"]:
-        item = session.scalar(
-            select(LexicalItem).where(
-                LexicalItem.source_entry_id == record["entry_id"]
-            )
-        )
-        if item is not None:
-            word_items[record["entry_id"]] = item
+    # ── Bulk lookup: map external IDs to DB IDs ──────────────────────
+    items = session.scalars(select(LexicalItem)).all()
+    word_by_entry_id: dict[int, LexicalItem] = {
+        item.source_entry_id: item for item in items if item.source_entry_id is not None
+    }
 
+    senses_by_item: dict[tuple[int, int], LexicalSense] = {}
+    for sense in session.scalars(select(LexicalSense)).all():
+        senses_by_item[(sense.lexical_item_id, sense.sense_number)] = sense
+
+    all_sentences = session.scalars(select(Sentence)).all()
+    sentence_by_text: dict[str, Sentence] = {s.text: s for s in all_sentences}
+
+    all_translations = session.scalars(select(SentenceTranslation)).all()
+    translation_by_key: dict[tuple[int, str], SentenceTranslation] = {
+        (t.sentence_id, t.translation): t for t in all_translations
+    }
+
+    # ── Delete existing embeddings for this model ────────────────────
+    session.execute(delete(Embedding).where(Embedding.model_name == model_name))
+    session.flush()
+
+    # ── Build and insert in batches ──────────────────────────────────
+    counts: dict[str, int] = {"word": 0, "sense": 0, "sentence": 0, "sentence_pair": 0}
+
+    def _vector(values: np.ndarray, index: int) -> list[float]:
+        """Convert a single numpy row to Python list, avoiding holding all at once."""
+        return values[index].astype(float).tolist()
+
+    def _flush(batch: list[dict[str, Any]]) -> None:
+        if not batch:
+            return
+        session.execute(insert(Embedding), batch)
+        session.flush()
+        batch.clear()
+
+    batch: list[dict[str, Any]] = []
+
+    # Words
     for index, record in enumerate(metadata["word_records"]):
-        item = word_items.get(record["entry_id"])
-        if item is not None:
-            save_embedding(
-                session,
-                model_name,
-                dimensions,
-                "word",
-                "lexical_item_id",
-                int(item.id),
-                words[index],
-            )
-            counts["word"] += 1
-
-    for index, record in enumerate(metadata["sense_records"]):
-        item = word_items.get(record["entry_id"])
+        item = word_by_entry_id.get(record["entry_id"])
         if item is None:
             continue
-        sense = session.scalar(
-            select(LexicalSense).where(
-                LexicalSense.lexical_item_id == item.id,
-                LexicalSense.sense_number == record["sense_number"],
-            )
+        batch.append(
+            {
+                "model_name": model_name,
+                "content_type": "word",
+                "dimensions": dimensions,
+                "lexical_item_id": item.id,
+                "embedding": _vector(words, index),
+            }
         )
-        if sense is not None:
-            save_embedding(
-                session,
-                model_name,
-                dimensions,
-                "sense",
-                "sense_id",
-                int(sense.id),
-                senses[index],
-            )
-            counts["sense"] += 1
+        counts["word"] += 1
+        if len(batch) >= BATCH_SIZE:
+            _flush(batch)
+    _flush(batch)
 
-    sentence_ids: dict[str, int] = {}
-    for record in metadata["sentence_records"]:
-        sentence = session.scalar(
-            select(Sentence).where(Sentence.text == record["text"])
-        )
-        if sentence is not None:
-            sentence_ids[record["pair_id"]] = sentence.id
-
-    for index, record in enumerate(metadata["sentence_records"]):
-        sentence_id = sentence_ids.get(record["pair_id"])
-        if sentence_id is None:
+    # Senses
+    for index, record in enumerate(metadata["sense_records"]):
+        item = word_by_entry_id.get(record["entry_id"])
+        if item is None:
             continue
-        save_embedding(
-            session,
-            model_name,
-            dimensions,
-            "sentence",
-            "sentence_id",
-            int(sentence_id),
-            sentences[index],
+        sense = senses_by_item.get((item.id, record["sense_number"]))
+        if sense is None:
+            continue
+        batch.append(
+            {
+                "model_name": model_name,
+                "content_type": "sense",
+                "dimensions": dimensions,
+                "sense_id": sense.id,
+                "embedding": _vector(senses, index),
+            }
+        )
+        counts["sense"] += 1
+        if len(batch) >= BATCH_SIZE:
+            _flush(batch)
+    _flush(batch)
+
+    # Sentences + sentence pairs
+    for index, record in enumerate(metadata["sentence_records"]):
+        sentence = sentence_by_text.get(record["text"])
+        if sentence is None:
+            continue
+        batch.append(
+            {
+                "model_name": model_name,
+                "content_type": "sentence",
+                "dimensions": dimensions,
+                "sentence_id": sentence.id,
+                "embedding": _vector(sentences, index),
+            }
         )
         counts["sentence"] += 1
+        if len(batch) >= BATCH_SIZE:
+            _flush(batch)
 
-        translation = session.scalar(
-            select(SentenceTranslation).where(
-                SentenceTranslation.sentence_id == sentence_id,
-                SentenceTranslation.translation == record["translation"],
-            )
+        translation = translation_by_key.get(
+            (sentence.id, record["translation"])
         )
-        if translation is not None:
-            save_embedding(
-                session,
-                model_name,
-                dimensions,
-                "sentence_pair",
-                "sentence_translation_id",
-                int(translation.id),
-                sentence_pairs[index],
-            )
-            counts["sentence_pair"] += 1
+        if translation is None:
+            continue
+        batch.append(
+            {
+                "model_name": model_name,
+                "content_type": "sentence_pair",
+                "dimensions": dimensions,
+                "sentence_translation_id": translation.id,
+                "embedding": _vector(sentence_pairs, index),
+            }
+        )
+        counts["sentence_pair"] += 1
+        if len(batch) >= BATCH_SIZE:
+            _flush(batch)
+    _flush(batch)
 
     session.commit()
     return counts
