@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:conlang/services/local_database.dart';
 
 class WordScreen extends StatefulWidget {
   final Map<String, dynamic> word;
+  final String language;
 
-  const WordScreen({super.key, required this.word});
+  const WordScreen({super.key, required this.word, required this.language});
 
   @override
   State<WordScreen> createState() => _WordScreenState();
@@ -12,9 +14,42 @@ class WordScreen extends StatefulWidget {
 class _WordScreenState extends State<WordScreen> {
   bool _revealed = false;
   bool _showConjugations = false;
+  bool _isSaved = false;
+  bool _loadingBookmark = true;
 
   List<dynamic> get _senses =>
       widget.word['senses'] as List<dynamic>? ?? const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSaved();
+  }
+
+  Future<void> _checkSaved() async {
+    final saved = await LocalDatabase.isWordSaved(
+      widget.word['word'] as String? ?? '',
+      widget.language,
+    );
+    if (mounted) {
+      setState(() {
+        _isSaved = saved;
+        _loadingBookmark = false;
+      });
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    final word = widget.word['word'] as String? ?? '';
+    if (_isSaved) {
+      await LocalDatabase.removeWord(word, widget.language);
+    } else {
+      await LocalDatabase.saveWord(widget.word, widget.language);
+    }
+    if (mounted) {
+      setState(() => _isSaved = !_isSaved);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +59,24 @@ class _WordScreenState extends State<WordScreen> {
     final gender = widget.word['gender'] as String?;
 
     return Scaffold(
-      appBar: AppBar(title: Text(word)),
+      appBar: AppBar(
+        title: Text(word),
+        actions: [
+          _loadingBookmark
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              : IconButton(
+                  tooltip: _isSaved ? 'Remove from saved' : 'Save word',
+                  onPressed: _toggleBookmark,
+                  icon: Icon(
+                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  ),
+                ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Card(
