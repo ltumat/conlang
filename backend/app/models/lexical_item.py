@@ -16,7 +16,6 @@ class LexicalItem(Base):
     word: Mapped[str] = mapped_column(String, nullable=False)
     pronunciation: Mapped[str | None] = mapped_column(String)
     part_of_speech_code: Mapped[str | None] = mapped_column(String(10))
-    part_of_speech: Mapped[str | None] = mapped_column(String)
     gender: Mapped[str | None] = mapped_column(String(10))
     source_entry_id: Mapped[int | None] = mapped_column(Integer)
     language_id: Mapped[int] = mapped_column(

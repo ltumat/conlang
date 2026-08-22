@@ -20,6 +20,7 @@ class Embedding(Base):
             "model_name",
             "content_type",
             "lexical_item_id",
+            unique=True,
             postgresql_where="lexical_item_id IS NOT NULL",
         ),
         Index(
@@ -27,6 +28,7 @@ class Embedding(Base):
             "model_name",
             "content_type",
             "sense_id",
+            unique=True,
             postgresql_where="sense_id IS NOT NULL",
         ),
         Index(
@@ -34,6 +36,7 @@ class Embedding(Base):
             "model_name",
             "content_type",
             "sentence_id",
+            unique=True,
             postgresql_where="sentence_id IS NOT NULL",
         ),
         Index(
@@ -41,6 +44,7 @@ class Embedding(Base):
             "model_name",
             "content_type",
             "sentence_translation_id",
+            unique=True,
             postgresql_where="sentence_translation_id IS NOT NULL",
         ),
     )
