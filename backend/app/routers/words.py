@@ -26,28 +26,42 @@ def _word_to_dict(item: LexicalItem) -> dict:
             }
         )
 
-    # Group verb forms into conjugations by form_type
-    conjugations: dict[str, dict[str, str] | str] = {}
+    # Group verb forms by mood+tense for conjugation tables
+    conjugations: dict[str, dict[str, str]] = {}
     for form in item.forms:
-        if form.form_type == "conjugation":
-            tense = form.features.get("tense", "present")
-            person = form.features.get("person", "")
-            if tense not in conjugations:
-                conjugations[tense] = {}
-            if isinstance(conjugations[tense], dict):
-                conjugations[tense][person] = form.form
-        elif form.form_type == "past_participle":
-            conjugations["past_participle"] = form.form
+        feat_list = form.features if isinstance(form.features, list) else [form.features]
+        for feat in feat_list:
+            if form.form_type == "conjugation":
+                mood = feat.get("mood", "")
+                tense = feat.get("tense", "")
+                key = f"{mood}_{tense}" if mood else tense
+                person = feat.get("person", "") + feat.get("number", "")
+                if key not in conjugations:
+                    conjugations[key] = {"_mood": mood, "_tense": tense}
+                conjugations[key][person] = form.form
+            elif form.form_type == "past_participle":
+                conjugations.setdefault("past_participle", {})[""] = form.form
+            elif form.form_type == "infinitive":
+                conjugations.setdefault("infinitive", {})[""] = form.form
 
     result: dict = {
         "word": item.word,
         "pronunciation": item.pronunciation,
-        "part_of_speech": item.part_of_speech or item.part_of_speech_code,
+        "part_of_speech": item.part_of_speech_code,
         "gender": item.gender,
         "senses": senses,
     }
     if conjugations:
-        result["conjugations"] = conjugations
+        # Remove internal metadata keys from the output
+        clean: dict[str, dict[str, str] | str] = {}
+        for key, forms in conjugations.items():
+            if key in ("past_participle", "infinitive"):
+                clean[key] = forms.get("", "")
+            else:
+                clean[key] = {
+                    k: v for k, v in forms.items() if not k.startswith("_")
+                }
+        result["conjugations"] = clean
     return result
 
 
