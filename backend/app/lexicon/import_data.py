@@ -70,7 +70,6 @@ def import_lexicon(
                 word=word,
                 pronunciation=entry.get("pronunciation"),
                 part_of_speech_code=entry.get("part_of_speech_code"),
-                part_of_speech=entry.get("part_of_speech"),
                 gender=entry.get("gender"),
                 source_entry_id=entry.get("id"),
                 language_id=language.id,
@@ -279,6 +278,29 @@ def populate_database(
         "sentence_translations": sentence_counts[1],
         "word_occurrences": sentence_counts[2],
     }
+
+
+def populate_tei_only(tei_path: str | Path, language_name: str = "French", language_code: str = "fra") -> dict[str, int]:
+    """Import entries from a TEI file without re-processing sentences or Lexique.
+
+    Useful for incrementally adding words from a generated TEI file.
+
+    Example::
+
+        python -c "from app.lexicon.import_data import populate_tei_only; import json; print(json.dumps(populate_tei_only('app/language_data/french/auto-generated.tei')))"
+    """
+    entries = load_tei_entries(tei_path)
+    print(f"Loaded {len(entries):,} entries from {tei_path}")
+    with SessionLocal() as session:
+        try:
+            language = get_language(session, language_name, language_code)
+            items_by_word = import_lexicon(session, entries, language)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+    lexical_items = sum(len(items) for items in items_by_word.values())
+    return {"entries_loaded": len(entries), "new_lexical_items": lexical_items}
 
 
 def main() -> None:

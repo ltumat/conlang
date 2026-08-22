@@ -73,7 +73,6 @@ def _parse_entry(entry: ET.Element, index: int) -> dict[str, Any]:
         "word": _text(_element(form, "orth")) if form is not None else None,
         "pronunciation": _text(_element(form, "pron")) if form is not None else None,
         "part_of_speech_code": pos_code,
-        "part_of_speech": PART_OF_SPEECH.get(pos_code) if pos_code else None,
         "gender": _text(_element(gramgrp, "gen")) if gramgrp is not None else None,
         "senses": senses,
         "meaning_count": len(senses),
