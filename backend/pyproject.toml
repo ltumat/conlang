@@ -16,6 +16,7 @@ dependencies = [
     "tatoebatools>=0.2.3",
     "modal>=1.5.4",
     "matplotlib>=3.11.1",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
