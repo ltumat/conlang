@@ -153,22 +153,26 @@ def import_embeddings(
     _flush(batch)
 
     # Sentences + sentence pairs
+    seen_sentence_ids: set[int] = set()
     for index, record in enumerate(metadata["sentence_records"]):
         sentence = sentence_by_text.get(record["text"])
         if sentence is None:
             continue
-        batch.append(
-            {
-                "model_name": model_name,
-                "content_type": "sentence",
-                "dimensions": dimensions,
-                "sentence_id": sentence.id,
-                "embedding": _vector(sentences, index),
-            }
-        )
-        counts["sentence"] += 1
-        if len(batch) >= BATCH_SIZE:
-            _flush(batch)
+        # Only insert one sentence embedding per unique sentence
+        if sentence.id not in seen_sentence_ids:
+            batch.append(
+                {
+                    "model_name": model_name,
+                    "content_type": "sentence",
+                    "dimensions": dimensions,
+                    "sentence_id": sentence.id,
+                    "embedding": _vector(sentences, index),
+                }
+            )
+            seen_sentence_ids.add(sentence.id)
+            counts["sentence"] += 1
+            if len(batch) >= BATCH_SIZE:
+                _flush(batch)
 
         translation = translation_by_key.get(
             (sentence.id, record["translation"])

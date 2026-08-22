@@ -67,19 +67,6 @@ def _sense_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return records
 
 
-def _sentence_records(sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "pair_id": sentence["pair_id"],
-            "sentence_id": sentence["sentence_id"],
-            "text": sentence["text"],
-            "translation": sentence["translation"],
-            "words": sentence.get("words", []),
-        }
-        for sentence in sentences
-    ]
-
-
 @app.function(
     image=image,
     gpu="A10G",
@@ -102,7 +89,7 @@ def embed_all(
         if entry.get("word")
     ]
     sense_records = _sense_records(entries)
-    sentence_records = _sentence_records(sentences)
+    sentence_records = sentences
     metadata = {
         "word_records": word_records,
         "sense_records": sense_records,
@@ -132,7 +119,15 @@ def embed_all(
 
     word_vectors = encode([record["text"] for record in word_records])
     sense_vectors = encode([record["text"] for record in sense_records])
-    sentence_vectors = encode([record["text"] for record in sentence_records])
+
+    # Deduplicate: embed each unique French sentence text once
+    unique_sentences = list(dict.fromkeys(r["text"] for r in sentence_records))
+    unique_sentence_vectors = encode(unique_sentences)
+    text_to_idx = {text: i for i, text in enumerate(unique_sentences)}
+    sentence_vectors = unique_sentence_vectors[
+        [text_to_idx[r["text"]] for r in sentence_records]
+    ]
+
     pair_vectors = encode(
         [
             f"French: {record['text']}\nEnglish: {record['translation']}"
