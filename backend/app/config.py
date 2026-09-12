@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://conlang:conlang@localhost:5432/conlang"
     )
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

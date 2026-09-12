@@ -18,6 +18,7 @@ class LexicalItem(Base):
     part_of_speech_code: Mapped[str | None] = mapped_column(String(10))
     gender: Mapped[str | None] = mapped_column(String(10))
     source_entry_id: Mapped[int | None] = mapped_column(Integer)
+    source: Mapped[str | None] = mapped_column(String(20))
     language_id: Mapped[int] = mapped_column(
         ForeignKey("languages.id"), nullable=False
     )
