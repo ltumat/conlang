@@ -51,6 +51,7 @@ def import_embeddings(
     senses: np.ndarray,
     sentences: np.ndarray,
     sentence_pairs: np.ndarray,
+    incremental: bool = False,
 ) -> dict[str, int]:
     model_name = manifest["model"]
     dimensions = int(manifest["dimensions"])
@@ -91,9 +92,22 @@ def import_embeddings(
         (t.sentence_id, t.translation): t for t in all_translations
     }
 
+    # The `incremental` flag is passed via function locals/kwargs
+    incremental = locals().get("incremental", False)
+
     # ── Delete existing embeddings for this model ────────────────────
-    session.execute(delete(Embedding).where(Embedding.model_name == model_name))
-    session.flush()
+    if not incremental:
+        session.execute(delete(Embedding).where(Embedding.model_name == model_name))
+        session.flush()
+    else:
+        # Build set of existing embedding keys to skip
+        existing = session.execute(
+            select(Embedding.lexical_item_id, Embedding.sense_id, Embedding.sentence_id, Embedding.content_type)
+            .where(Embedding.model_name == model_name)
+        ).all()
+        existing_word_items: set[int] = {r[0] for r in existing if r[0] is not None and r[3] == "word"}
+        existing_sense_ids: set[int] = {r[1] for r in existing if r[1] is not None and r[3] == "sense"}
+        existing_sentence_ids: set[int] = {r[2] for r in existing if r[2] is not None and r[3] in ("sentence", "sentence_pair")}
 
     # ── Build and insert in batches ──────────────────────────────────
     counts: dict[str, int] = {"word": 0, "sense": 0, "sentence": 0, "sentence_pair": 0}
@@ -115,6 +129,8 @@ def import_embeddings(
     for index, record in enumerate(metadata["word_records"]):
         item = word_by_entry_id.get(record["entry_id"])
         if item is None:
+            continue
+        if incremental and item.id in existing_word_items:
             continue
         batch.append(
             {
@@ -138,6 +154,8 @@ def import_embeddings(
         sense = senses_by_item.get((item.id, record["sense_number"]))
         if sense is None:
             continue
+        if incremental and sense.id in existing_sense_ids:
+            continue
         batch.append(
             {
                 "model_name": model_name,
@@ -157,6 +175,8 @@ def import_embeddings(
     for index, record in enumerate(metadata["sentence_records"]):
         sentence = sentence_by_text.get(record["text"])
         if sentence is None:
+            continue
+        if incremental and sentence.id in existing_sentence_ids:
             continue
         # Only insert one sentence embedding per unique sentence
         if sentence.id not in seen_sentence_ids:
@@ -234,6 +254,8 @@ def main() -> None:
     parser.add_argument("--senses", type=Path)
     parser.add_argument("--sentences", type=Path)
     parser.add_argument("--sentence-pairs", type=Path)
+    parser.add_argument("--incremental", action="store_true",
+                        help="Skip records that already have embeddings instead of re-embedding all")
     args = parser.parse_args()
 
     downloaded = download_modal_outputs(args.download_dir)
@@ -256,6 +278,7 @@ def main() -> None:
             get_vector_rows(paths["senses"]),
             get_vector_rows(paths["sentences"]),
             get_vector_rows(paths["sentence_pairs"]),
+            incremental=args.incremental,
         )
     print(json.dumps(counts, indent=2))
 
