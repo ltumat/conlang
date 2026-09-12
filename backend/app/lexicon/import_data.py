@@ -34,9 +34,14 @@ def get_language(session: Session, name: str, code: str) -> Language:
 
 
 def import_lexicon(
-    session: Session, entries: list[dict], language: Language
+    session: Session, entries: list[dict], language: Language,
+    source: str | None = None,
 ) -> dict[str, list[LexicalItem]]:
-    """Import TEI entries using preloaded lookups instead of per-row queries."""
+    """Import TEI entries using preloaded lookups instead of per-row queries.
+
+    If *source* is provided (e.g. ``"freedict"``, ``"ai"``, ``"manual"``), it is
+    stored on every newly created ``LexicalItem``.
+    """
     items = session.scalars(
         select(LexicalItem).where(LexicalItem.language_id == language.id)
     ).all()
@@ -72,6 +77,7 @@ def import_lexicon(
                 part_of_speech_code=entry.get("part_of_speech_code"),
                 gender=entry.get("gender"),
                 source_entry_id=entry.get("id"),
+                source=source,
                 language_id=language.id,
             )
             session.add(item)
@@ -247,6 +253,7 @@ def populate_database(
     lexique_file: str | Path,
     language_name: str = "French",
     language_code: str = "fra",
+    source: str | None = None,
 ) -> dict[str, int]:
     print("Loading source files...")
     entries = load_tei_entries(tei_file)
@@ -259,7 +266,7 @@ def populate_database(
     with SessionLocal() as session:
         try:
             language = get_language(session, language_name, language_code)
-            items_by_word = import_lexicon(session, entries, language)
+            items_by_word = import_lexicon(session, entries, language, source=source)
             lexical_forms = import_lexique_forms(
                 session, lexique_file, items_by_word
             )
@@ -280,21 +287,26 @@ def populate_database(
     }
 
 
-def populate_tei_only(tei_path: str | Path, language_name: str = "French", language_code: str = "fra") -> dict[str, int]:
+def populate_tei_only(
+    tei_path: str | Path,
+    language_name: str = "French",
+    language_code: str = "fra",
+    source: str | None = None,
+) -> dict[str, int]:
     """Import entries from a TEI file without re-processing sentences or Lexique.
 
     Useful for incrementally adding words from a generated TEI file.
 
     Example::
 
-        python -c "from app.lexicon.import_data import populate_tei_only; import json; print(json.dumps(populate_tei_only('app/language_data/french/auto-generated.tei')))"
+        python -c "from app.lexicon.import_data import populate_tei_only; import json; print(json.dumps(populate_tei_only('app/language_data/french/auto-generated.tei', source='ai')))"
     """
     entries = load_tei_entries(tei_path)
     print(f"Loaded {len(entries):,} entries from {tei_path}")
     with SessionLocal() as session:
         try:
             language = get_language(session, language_name, language_code)
-            items_by_word = import_lexicon(session, entries, language)
+            items_by_word = import_lexicon(session, entries, language, source=source)
             session.commit()
         except Exception:
             session.rollback()
@@ -303,14 +315,134 @@ def populate_tei_only(tei_path: str | Path, language_name: str = "French", langu
     return {"entries_loaded": len(entries), "new_lexical_items": lexical_items}
 
 
+def populate_sentences_only(
+    sentences_file: str | Path,
+    lexique_file: str | Path,
+    language_name: str = "French",
+    language_code: str = "fra",
+    items_by_word: dict[str, list[LexicalItem]] | None = None,
+) -> dict[str, int]:
+    """Link existing lexical items to Lexique forms and sentence occurrences.
+
+    Runs the forms and sentences import steps without re-processing the TEI,
+    so it works incrementally after ``populate_tei_only`` has added new items.
+
+    If *items_by_word* is given, only those items are processed (no DB query).
+    Otherwise all lexical items for the language are loaded from the database.
+
+    Example::
+
+        python -c "from app.lexicon.import_data import populate_sentences_only; import json; print(json.dumps(populate_sentences_only('app/language_data/french/sentence_pairs.tsv', 'app/language_data/french/Lexique4.tsv')))"
+    """
+    print("Loading sentence pairs and Lexique forms...")
+    forms = load_lexique_forms(lexique_file)
+    sentence_pairs = load_sentence_pairs(sentences_file, forms)
+    print(f"Loaded {len(sentence_pairs):,} sentence pairs")
+
+    with SessionLocal() as session:
+        try:
+            language = get_language(session, language_name, language_code)
+
+            if items_by_word is None:
+                all_items = session.scalars(
+                    select(LexicalItem).where(LexicalItem.language_id == language.id)
+                ).all()
+                items_by_word = {}
+                for item in all_items:
+                    items_by_word.setdefault(item.word.casefold(), []).append(item)
+                print(f"Found {len(all_items):,} existing lexical items")
+            else:
+                all_items = [i for items in items_by_word.values() for i in items]
+                print(f"Processing {len(all_items):,} provided lexical items")
+
+            lexical_forms = import_lexique_forms(
+                session, lexique_file, items_by_word
+            )
+            sentence_counts = import_sentences(
+                session, sentence_pairs, items_by_word, language
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    return {
+        "lexical_items": len(all_items),
+        "lexical_forms": lexical_forms,
+        "sentences": sentence_counts[0],
+        "sentence_translations": sentence_counts[1],
+        "word_occurrences": sentence_counts[2],
+    }
+
+
 def main() -> None:
     config = load_config()
-    parser = argparse.ArgumentParser(description="Populate the French database")
-    parser.add_argument("--tei-file", type=Path, default=config.tei_file)
-    parser.add_argument("--sentences-file", type=Path, default=config.sentences_file)
-    parser.add_argument("--lexique-file", type=Path, default=config.lexique_file)
+    parser = argparse.ArgumentParser(
+        description="Import data into the French database"
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # full — TEI + Lexique forms + sentences
+    p_full = sub.add_parser("full", help="Full import: TEI, Lexique forms, and sentence pairs")
+    p_full.add_argument("--tei-file", type=Path, default=config.tei_file)
+    p_full.add_argument("--sentences-file", type=Path, default=config.sentences_file)
+    p_full.add_argument("--lexique-file", type=Path, default=config.lexique_file)
+    p_full.add_argument("--source", help="Source label for new lexical items (e.g. 'freedict', 'ai')")
+
+    # tei-only — just the TEI entries
+    p_tei = sub.add_parser("tei-only", help="Import only TEI entries (no forms or sentences)")
+    p_tei.add_argument("--tei-file", type=Path, required=True)
+    p_tei.add_argument("--source", default="ai", help="Source label for new lexical items")
+
+    # sentences-only — link forms and sentences for existing items
+    p_sent = sub.add_parser("sentences-only", help="Link Lexique forms and sentences for existing items")
+    p_sent.add_argument("--sentences-file", type=Path, default=config.sentences_file)
+    p_sent.add_argument("--lexique-file", type=Path, default=config.lexique_file)
+    p_sent.add_argument("--source", default="ai",
+                        help="Only process items with this source label (default: ai)")
+    p_sent.add_argument("--all", dest="process_all", action="store_true",
+                        help="Process all items regardless of source")
+
     args = parser.parse_args()
-    print(populate_database(**vars(args)))
+
+    if args.command == "full":
+        print(populate_database(
+            tei_file=args.tei_file,
+            sentences_file=args.sentences_file,
+            lexique_file=args.lexique_file,
+            source=args.source,
+        ))
+    elif args.command == "tei-only":
+        print(populate_tei_only(
+            tei_path=args.tei_file,
+            source=args.source,
+        ))
+    elif args.command == "sentences-only":
+        from app.models import Language
+        from sqlalchemy import select
+
+        with SessionLocal() as session:
+            lang = session.scalar(select(Language).where(Language.code == "fra"))
+            if args.process_all:
+                items = session.scalars(
+                    select(LexicalItem).where(LexicalItem.language_id == lang.id)
+                ).all()
+            else:
+                items = session.scalars(
+                    select(LexicalItem).where(
+                        LexicalItem.language_id == lang.id,
+                        LexicalItem.source == args.source,
+                    )
+                ).all()
+            items_by_word: dict[str, list[LexicalItem]] = {}
+            for item in items:
+                items_by_word.setdefault(item.word.casefold(), []).append(item)
+
+        print(populate_sentences_only(
+            sentences_file=args.sentences_file,
+            lexique_file=args.lexique_file,
+            items_by_word=items_by_word,
+        ))
 
 
 if __name__ == "__main__":
