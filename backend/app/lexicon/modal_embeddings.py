@@ -168,9 +168,28 @@ def embed_all(
 def main(
     batch_size: int = 64,
 ) -> None:
-    """Parse configured local files, embed remotely, and persist outputs."""
-    entries = load_tei_entries(CONFIG.tei_file)
+    """Parse configured local files, embed remotely, and persist outputs.
+
+    If ``auto-generated.tei`` exists alongside the main TEI, it is loaded
+    instead — the FreeDict entries already have embeddings in the DB, so
+    only the auto-generated entries need processing here.
+    """
+    tei_dir = Path(CONFIG.tei_file).parent
+    auto_tei = tei_dir / "auto-generated.tei"
+
+    if auto_tei.exists():
+        entries = load_tei_entries(auto_tei)
+        # Offset IDs to match DB (avoids collision with FreeDict source_entry_ids)
+        ID_OFFSET = 100000
+        for e in entries:
+            e["id"] += ID_OFFSET
+        print(f"Loaded {len(entries)} entries from {auto_tei} (offset {ID_OFFSET})")
+    else:
+        entries = load_tei_entries(CONFIG.tei_file)
+        print(f"Loaded {len(entries)} entries from {CONFIG.tei_file}")
+
     forms = load_lexique_forms(CONFIG.lexique_file)
     sentences = load_sentence_pairs(CONFIG.sentences_file, forms)
+    print(f"Loaded {len(sentences)} sentence pairs")
     manifest = embed_all.remote(entries, sentences, batch_size=batch_size)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
