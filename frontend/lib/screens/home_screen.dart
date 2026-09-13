@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:conlang/services/api_service.dart';
-import 'package:conlang/screens/language_screen.dart';
+import 'package:conlang/widgets/activity_tile.dart';
+import 'package:conlang/widgets/language_tile.dart';
+import 'package:conlang/widgets/profile_tile.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,43 +24,40 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Conlang'),
-      ),
+      appBar: AppBar(title: const Text('Conlang')),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _languagesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+          final languages = snapshot.data ?? [];
+          final langMap = {for (final l in languages) l['name'] as String: l};
 
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+          final french = langMap['French'];
+          final wordCount = (french?['word_count'] as num?)?.toInt() ?? 0;
 
-          final languages = snapshot.data!;
-          return ListView.builder(
-            itemCount: languages.length,
-            itemBuilder: (context, index) {
-              final lang = languages[index];
-              return ListTile(
-                title: Text(lang['name']),
-                subtitle: Text(
-                  '${lang['word_count']} words · ${lang['video_count']} videos',
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              SizedBox(
+                height: 200,
+                child: LanguageTile(name: 'French', wordCount: wordCount),
+              ),
+              const SizedBox(height: 16),
+              const SizedBox(
+                height: 200,
+                child: ActivityTile(
+                  streakDays: 3,
+                  recentWords: [5, 8, 0, 12, 6, 3, 9],
                 ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => LanguageScreen(
-                        language: lang['name'],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
+              ),
+              const SizedBox(height: 16),
+              const SizedBox(
+                height: 200,
+                child: ProfileTile(),
+              ),
+            ],
           );
         },
       ),
