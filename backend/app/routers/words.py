@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import SessionLocal
@@ -66,26 +66,49 @@ def _word_to_dict(item: LexicalItem) -> dict:
 
 
 @router.get("/")
-async def list_words(language: str = "French", db: Session = Depends(get_db)):
+async def list_words(
+    language: str = "French",
+    q: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
     lang = db.scalar(select(Language).where(Language.name == language))
     if lang is None:
         raise HTTPException(status_code=404, detail=f"Language '{language}' not found")
 
+    # Base query
+    base = select(LexicalItem).where(LexicalItem.language_id == lang.id)
+
+    # Count total matching rows (for pagination metadata)
+    if q:
+        like = f"%{q}%"
+        base = base.where(LexicalItem.word.ilike(like))
+
+    total = db.scalar(select(func.count()).select_from(base.subquery()))
+
+    # Fetch the requested page
     items = (
         db.execute(
-            select(LexicalItem)
-            .where(LexicalItem.language_id == lang.id)
-            .options(
+            base.options(
                 joinedload(LexicalItem.senses).joinedload(LexicalSense.translations),
                 joinedload(LexicalItem.forms),
             )
             .order_by(LexicalItem.word)
+            .offset(offset)
+            .limit(limit)
         )
         .unique()
         .scalars()
         .all()
     )
-    return {"words": [_word_to_dict(item) for item in items]}
+
+    return {
+        "words": [_word_to_dict(item) for item in items],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @router.get("/{word}")
