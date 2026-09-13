@@ -38,7 +38,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () {
                 // TODO: navigate to training session
@@ -52,17 +52,28 @@ class _LanguageScreenState extends State<LanguageScreen> {
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () async {
-                await Navigator.push(
+              onPressed: () {
+                Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => WordsScreen(language: widget.language),
                   ),
                 );
-                _loadSavedCount();
               },
-              icon: const Icon(Icons.list),
-              label: const Text('Vocabulary List'),
+              icon: const Icon(Icons.menu_book),
+              label: const Text('Dictionary'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                textStyle: const TextStyle(fontSize: 18),
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () {
+                // TODO: navigate to conversation training
+              },
+              icon: const Icon(Icons.forum),
+              label: const Text('Conversation Training'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 textStyle: const TextStyle(fontSize: 18),

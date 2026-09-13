@@ -16,20 +16,46 @@ class LocalDatabase {
     final path = '$dbPath/conlang.db';
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE saved_words (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            word TEXT NOT NULL,
-            language TEXT NOT NULL,
-            data TEXT NOT NULL,
-            saved_at TEXT NOT NULL,
-            UNIQUE(word, language)
-          )
-        ''');
+        await _createTables(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE search_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              word TEXT NOT NULL,
+              language TEXT NOT NULL,
+              viewed_at TEXT NOT NULL,
+              UNIQUE(word, language)
+            )
+          ''');
+        }
       },
     );
+  }
+
+  static Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE saved_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL,
+        language TEXT NOT NULL,
+        data TEXT NOT NULL,
+        saved_at TEXT NOT NULL,
+        UNIQUE(word, language)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE search_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL,
+        language TEXT NOT NULL,
+        viewed_at TEXT NOT NULL,
+        UNIQUE(word, language)
+      )
+    ''');
   }
 
   /// Save a word to local storage. Returns true if inserted, false if already saved.
@@ -111,5 +137,73 @@ class LocalDatabase {
       [language],
     );
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  static Future<void> ensureTable() async {
+    final db = await database;
+    // Check if search_history exists; create it if not (handles stale DBs).
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='search_history'",
+    );
+    if (tables.isEmpty) {
+      await db.execute('''
+        CREATE TABLE search_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          word TEXT NOT NULL,
+          language TEXT NOT NULL,
+          viewed_at TEXT NOT NULL,
+          UNIQUE(word, language)
+        )
+      ''');
+      // Bump the internal version so version 2 tables stay known
+      await db.execute('PRAGMA user_version = 2');
+    }
+  }
+
+  /// Add a word to search history (most recent first, max 10 per language).
+  static Future<void> addSearchHistory(String word, String language) async {
+    await ensureTable();
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    await db.insert(
+      'search_history',
+      {
+        'word': word,
+        'language': language,
+        'viewed_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+
+    // Keep only the 10 most recent entries for this language
+    final all = await db.query(
+      'search_history',
+      where: 'language = ?',
+      whereArgs: [language],
+      orderBy: 'viewed_at DESC',
+    );
+    if (all.length > 10) {
+      final idsToKeep = all.take(10).map((r) => r['id']).toList();
+      await db.delete(
+        'search_history',
+        where: 'language = ? AND id NOT IN (${idsToKeep.map((_) => '?').join(',')})',
+        whereArgs: [language, ...idsToKeep],
+      );
+    }
+  }
+
+  /// Get search history for a language (most recent first, max 10).
+  static Future<List<String>> getSearchHistory(String language) async {
+    await ensureTable();
+    final db = await database;
+    final rows = await db.query(
+      'search_history',
+      where: 'language = ?',
+      whereArgs: [language],
+      orderBy: 'viewed_at DESC',
+      limit: 10,
+    );
+    return rows.map((r) => r['word'] as String).toList();
   }
 }

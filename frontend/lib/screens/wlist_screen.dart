@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:conlang/screens/add_word_screen.dart';
 import 'package:conlang/screens/word_screen.dart';
 import 'package:conlang/services/api_service.dart';
 import 'package:conlang/services/local_database.dart';
 
+/// Dictionary screen with search-as-you-type, pagination, and persisted history.
 class WordsScreen extends StatefulWidget {
   final String language;
 
@@ -16,206 +16,362 @@ class WordsScreen extends StatefulWidget {
 class _WordsScreenState extends State<WordsScreen> {
   final ApiService _apiService = ApiService();
   final TextEditingController _searchController = TextEditingController();
-  String _search = '';
+  final FocusNode _searchFocus = FocusNode();
 
-  /// false = all words (from API), true = saved words (local DB)
-  bool _showSaved = false;
+  String _query = '';
 
-  /// Future for the currently active tab
-  late Future<List<Map<String, dynamic>>> _wordsFuture;
+  final List<Map<String, dynamic>> _results = [];
+  int _total = 0;
+  int _offset = 0;
+  static const int _limit = 10;
+  bool _loading = false;
+  bool _hasMore = false;
+
+  /// Persisted history of clicked words (most recent first).
+  List<String> _history = [];
 
   @override
   void initState() {
     super.initState();
-    _wordsFuture = _fetchWords();
-    _searchController.addListener(() {
-      setState(() => _search = _searchController.text.trim().toLowerCase());
-    });
+    _searchController.addListener(_onSearchChanged);
+    _loadHistory();
   }
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchWords() {
-    if (_showSaved) {
-      return LocalDatabase.getSavedWords(widget.language);
+  Future<void> _loadHistory() async {
+    final h = await LocalDatabase.getSearchHistory(widget.language);
+    if (mounted) setState(() => _history = h);
+  }
+
+  void _onSearchChanged() {
+    final text = _searchController.text.trim();
+    if (text.toLowerCase() == _query) return;
+    setState(() => _query = text.toLowerCase());
+    if (_query.isNotEmpty) {
+      _search(_query);
     } else {
-      return _apiService.fetchWords(widget.language);
+      _clearResults();
     }
   }
 
-  void _switchTab(bool showSaved) {
-    if (showSaved == _showSaved) return;
+  Future<void> _search(String query) async {
     setState(() {
-      _showSaved = showSaved;
-      _wordsFuture = _fetchWords();
-      _search = '';
-      _searchController.clear();
+      _loading = true;
+      _results.clear();
+      _offset = 0;
+    });
+    try {
+      final data = await _apiService.searchWords(
+        widget.language,
+        query: query,
+        limit: _limit,
+        offset: 0,
+      );
+      final words = (data['words'] as List<dynamic>)
+          .map((w) => Map<String, dynamic>.from(w as Map))
+          .toList();
+      final total = data['total'] as int;
+      setState(() {
+        _results.addAll(words);
+        _total = total;
+        _offset = words.length;
+        _hasMore = _offset < _total;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    setState(() => _loading = true);
+    try {
+      final data = await _apiService.searchWords(
+        widget.language,
+        query: _query,
+        limit: _limit,
+        offset: _offset,
+      );
+      final words = (data['words'] as List<dynamic>)
+          .map((w) => Map<String, dynamic>.from(w as Map))
+          .toList();
+      final total = data['total'] as int;
+      setState(() {
+        _results.addAll(words);
+        _total = total;
+        _offset += words.length;
+        _hasMore = _offset < _total;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _clearResults() {
+    setState(() {
+      _results.clear();
+      _total = 0;
+      _offset = 0;
+      _hasMore = false;
     });
   }
 
-  Future<void> _addWord() async {
-    await Navigator.push<Map<String, String>>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddWordScreen(language: widget.language),
-      ),
-    );
-    setState(() => _wordsFuture = _fetchWords());
-  }
-
-  Future<void> _refresh() {
-    setState(() => _wordsFuture = _fetchWords());
-    return _wordsFuture;
+  Future<void> _saveWordToHistory(String word) async {
+    await LocalDatabase.addSearchHistory(word, widget.language);
+    // Refresh history from DB
+    final h = await LocalDatabase.getSearchHistory(widget.language);
+    if (mounted) setState(() => _history = h);
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.language),
-        actions: [
-          if (!_showSaved)
-            IconButton(
-              tooltip: 'Add word',
-              onPressed: _addWord,
-              icon: const Icon(Icons.add),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: Text('Dictionary — ${widget.language}')),
       body: Column(
         children: [
-          // Tab toggle: All / Saved
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('All'), icon: Icon(Icons.list)),
-                ButtonSegment(
-                  value: true,
-                  label: Text('Saved'),
-                  icon: Icon(Icons.bookmark),
-                ),
-              ],
-              selected: {_showSaved},
-              onSelectionChanged: (selected) => _switchTab(selected.first),
-            ),
-          ),
-          // Search bar (only for "All" tab)
-          if (!_showSaved)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  labelText: 'Search words',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _search.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: _searchController.clear,
-                          icon: const Icon(Icons.clear),
-                        ),
-                  border: const OutlineInputBorder(),
-                ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Search the dictionary…',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear',
+                        onPressed: () {
+                          _searchController.clear();
+                          _searchFocus.unfocus();
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+                border: const OutlineInputBorder(),
               ),
             ),
-          // Word list
-          Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _wordsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Error: ${snapshot.error}',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }
-
-                final words = (snapshot.data ?? [])
-                    .where((word) => _showSaved || (word['word'] as String? ?? '')
-                        .toLowerCase()
-                        .contains(_search))
-                    .toList();
-
-                if (words.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _showSaved
-                          ? 'No saved words yet.\nTap the bookmark icon on a word to save it.'
-                          : 'No matching words.',
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: words.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final word = words[index];
-                      return Card(
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 8,
-                          ),
-                          title: Text(
-                            word['word'] as String? ?? 'Unknown word',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          subtitle: Text(
-                            word['pronunciation'] == null
-                                ? 'Pronunciation unavailable'
-                                : '/${word['pronunciation']}/',
-                          ),
-                          trailing: _showSaved
-                              ? IconButton(
-                                  tooltip: 'Remove from saved',
-                                  icon: const Icon(Icons.bookmark_remove),
-                                  onPressed: () async {
-                                    await LocalDatabase.removeWord(
-                                      word['word'] as String,
-                                      widget.language,
-                                    );
-                                    _refresh();
-                                  },
-                                )
-                              : const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => WordScreen(
-                                word: word,
-                                language: widget.language,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
           ),
+          Expanded(child: _buildContent(theme)),
         ],
       ),
+    );
+  }
+
+  Widget _buildContent(ThemeData theme) {
+    if (_query.isEmpty) {
+      return _buildHistory(theme);
+    }
+
+    if (_loading && _results.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_results.isEmpty && !_loading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 48,
+                color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text('No results for "$_query"',
+                style: theme.textTheme.bodyLarge),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Row(
+            children: [
+              Text(
+                '${_results.length} of $_total results',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _results.length + (_hasMore ? 1 : 0),
+            separatorBuilder: (_, __) => const SizedBox(height: 6),
+            itemBuilder: (context, index) {
+              if (index == _results.length) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _loadMore,
+                      icon: _loading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.expand_more, size: 18),
+                      label: Text(_loading ? 'Loading…' : 'Load more'),
+                    ),
+                  ),
+                );
+              }
+
+              final word = _results[index];
+              return Card(
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 8,
+                  ),
+                  title: Text(
+                    word['word'] as String? ?? 'Unknown',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                  subtitle: Text(
+                    word['pronunciation'] == null
+                        ? ''
+                        : '/${word['pronunciation']}/',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    final wordText = word['word'] as String? ?? '';
+                    _saveWordToHistory(wordText);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WordScreen(
+                          word: word,
+                          language: widget.language,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHistory(ThemeData theme) {
+    if (_history.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search, size: 48,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+            const SizedBox(height: 12),
+            Text(
+              'Search for a word above',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Text('History',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              )),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _history.length,
+            itemBuilder: (_, i) {
+              final word = _history[i];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      try {
+                        final wordData = await _apiService.fetchWord(
+                          word,
+                          widget.language,
+                        );
+                        if (!mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => WordScreen(
+                              word: wordData,
+                              language: widget.language,
+                            ),
+                          ),
+                        );
+                      } catch (_) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('"$word" not found')),
+                        );
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.history,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 12),
+                          Text(word,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              )),
+                          const Spacer(),
+                          Icon(Icons.chevron_right,
+                              size: 16,
+                              color: theme.colorScheme.onSurfaceVariant),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

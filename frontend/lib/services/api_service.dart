@@ -29,6 +29,43 @@ class ApiService {
     }
   }
 
+  /// Search words with pagination. Returns [{words}, total, offset, limit].
+  Future<Map<String, dynamic>> searchWords(
+    String language, {
+    String query = '',
+    int limit = 10,
+    int offset = 0,
+  }) async {
+    final params = {'language': language};
+    if (query.isNotEmpty) params['q'] = query;
+    params['limit'] = limit.toString();
+    params['offset'] = offset.toString();
+
+    final uri = Uri.parse('$baseUrl/words/').replace(queryParameters: params);
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to search words');
+    }
+  }
+
+  /// Fetch a single word by its exact name.
+  Future<Map<String, dynamic>> fetchWord(
+    String word,
+    String language,
+  ) async {
+    final uri = Uri.parse('$baseUrl/words/${Uri.encodeComponent(word)}')
+        .replace(queryParameters: {'language': language});
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return Map<String, dynamic>.from(data['word'] as Map);
+    } else {
+      throw Exception('Word not found');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchWords(String language) async {
     final response = await http.get(
       Uri.parse('$baseUrl/words/?language=$language'),
