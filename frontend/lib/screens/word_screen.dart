@@ -61,21 +61,6 @@ class _WordScreenState extends State<WordScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(word),
-        actions: [
-          _loadingBookmark
-              ? const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                )
-              : IconButton(
-                  tooltip: _isSaved ? 'Remove from saved' : 'Save word',
-                  onPressed: _toggleBookmark,
-                  icon: Icon(
-                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                  ),
-                ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -86,12 +71,33 @@ class _WordScreenState extends State<WordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  word,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                // Title row with bookmark
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        word,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
+                    ),
+                    if (_loadingBookmark)
+                      const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else
+                      IconButton(
+                        tooltip: _isSaved ? 'Remove from saved' : 'Save word',
+                        onPressed: _toggleBookmark,
+                        icon: Icon(
+                          _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                        ),
+                      ),
+                  ],
                 ),
                 if (pronunciation != null) ...[
                   const SizedBox(height: 4),
