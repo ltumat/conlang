@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:conlang/screens/saved_words_screen.dart';
 import 'package:conlang/screens/wlist_screen.dart';
 import 'package:conlang/services/local_database.dart';
 
@@ -52,13 +53,14 @@ class _LanguageScreenState extends State<LanguageScreen> {
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => WordsScreen(language: widget.language),
                   ),
                 );
+                _loadSavedCount();
               },
               icon: const Icon(Icons.menu_book),
               label: const Text('Dictionary'),
@@ -85,7 +87,7 @@ class _LanguageScreenState extends State<LanguageScreen> {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => WordsScreen(language: widget.language),
+                    builder: (context) => SavedWordsScreen(language: widget.language),
                   ),
                 );
                 _loadSavedCount();

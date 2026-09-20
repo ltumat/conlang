@@ -105,9 +105,11 @@ class LocalDatabase {
     return result.isNotEmpty;
   }
 
-  /// Get all saved words for a language.
+  /// Get saved words for a language, optionally matching a search query (client-side filter).
   static Future<List<Map<String, dynamic>>> getSavedWords(
-      String language) async {
+    String language, {
+    String query = '',
+  }) async {
     final db = await database;
     final rows = await db.query(
       'saved_words',
@@ -115,9 +117,17 @@ class LocalDatabase {
       whereArgs: [language],
       orderBy: 'word ASC',
     );
-    return rows
+    var words = rows
         .map((row) => Map<String, dynamic>.from(jsonDecode(row['data'] as String)))
         .toList();
+    if (query.isNotEmpty) {
+      final q = query.toLowerCase();
+      words = words.where((w) {
+        final word = (w['word'] as String? ?? '').toLowerCase();
+        return word.contains(q);
+      }).toList();
+    }
+    return words;
   }
 
   /// Get all saved languages (languages that have at least one saved word).
