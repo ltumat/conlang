@@ -28,9 +28,18 @@ class _LanguageTileState extends State<LanguageTile> {
 
   Future<void> _loadSavedCount() async {
     final count = await LocalDatabase.getSavedWordCount(_current);
-    if (mounted) {
-      setState(() => _savedCount = count);
-    }
+    if (mounted) setState(() => _savedCount = count);
+  }
+
+  void _openLanguageScreen() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LanguageScreen(language: _current),
+      ),
+    );
+    // Refresh saved count when coming back
+    _loadSavedCount();
   }
 
   void _pickLanguage(BuildContext context) {
@@ -156,12 +165,7 @@ class _LanguageTileState extends State<LanguageTile> {
             shape: tileShape,
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => LanguageScreen(language: _current),
-                ),
-              ),
+              onTap: _openLanguageScreen,
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

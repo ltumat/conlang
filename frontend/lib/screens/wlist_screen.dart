@@ -159,7 +159,12 @@ class _WordsScreenState extends State<WordsScreen> {
                         },
                         icon: const Icon(Icons.clear),
                       ),
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                  borderSide: BorderSide.none,
+                ),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
             ),
           ),
